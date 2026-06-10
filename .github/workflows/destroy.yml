@@ -1,0 +1,48 @@
+name: Terraform Destroy
+
+# DANGER. Manual trigger ONLY — never runs automatically.
+# Requires typing the confirmation word AND production environment approval.
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "destroy-appstack" to confirm'
+        required: true
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  TF_VERSION: "1.9.5"
+  WORKING_DIR: environments/dev
+  AWS_REGION: ap-south-1
+
+jobs:
+  destroy:
+    runs-on: ubuntu-latest
+    environment: production   # second gate: reviewer must approve
+    if: ${{ inputs.confirm == 'destroy-appstack' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_APPLY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        working-directory: ${{ env.WORKING_DIR }}
+        run: terraform init -input=false
+
+      - name: Terraform Destroy
+        working-directory: ${{ env.WORKING_DIR }}
+        env:
+          TF_VAR_db_password: ${{ secrets.TF_VAR_DB_PASSWORD }}
+        run: terraform destroy -auto-approve -input=false -no-color
