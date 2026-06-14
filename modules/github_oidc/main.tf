@@ -147,10 +147,22 @@ data "aws_iam_policy_document" "apply_iam" {
       "iam:AddRoleToInstanceProfile",
       "iam:RemoveRoleFromInstanceProfile",
       "iam:TagInstanceProfile",
+      # Customer-managed policies (e.g. the SQS worker policy)
+      "iam:CreatePolicy",
+      "iam:DeletePolicy",
+      "iam:GetPolicy",
+      "iam:GetPolicyVersion",
+      "iam:CreatePolicyVersion",
+      "iam:DeletePolicyVersion",
+      "iam:ListPolicyVersions",
+      "iam:ListEntitiesForPolicy",
+      "iam:TagPolicy",
+      "iam:UntagPolicy",
     ]
     resources = [
       "arn:aws:iam::*:role/${var.project_name}-*",
       "arn:aws:iam::*:instance-profile/${var.project_name}-*",
+      "arn:aws:iam::*:policy/${var.project_name}-*",
     ]
   }
 
