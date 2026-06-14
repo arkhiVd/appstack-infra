@@ -37,6 +37,12 @@ variable "region" {
   default = "ap-south-1"
 }
 
+variable "github_repo" {
+  description = "GitHub repo (owner/name) allowed to assume the OIDC roles"
+  type        = string
+  default     = "arkhiVd/appstack-infra"
+}
+
 resource "random_id" "suffix" {
   byte_length = 4
 }
@@ -88,10 +94,29 @@ resource "aws_dynamodb_table" "lock" {
   }
 }
 
+# -----------------------------------------------------------------------------
+# GitHub Actions OIDC roles (plan + apply) for CI/CD.
+# -----------------------------------------------------------------------------
+module "github_oidc" {
+  source           = "../modules/github_oidc"
+  project_name     = var.project_name
+  github_repo      = var.github_repo
+  state_bucket_arn = aws_s3_bucket.state.arn
+  lock_table_arn   = aws_dynamodb_table.lock.arn
+}
+
 output "state_bucket" {
   value = aws_s3_bucket.state.id
 }
 
 output "lock_table" {
   value = aws_dynamodb_table.lock.name
+}
+
+output "plan_role_arn" {
+  value = module.github_oidc.plan_role_arn
+}
+
+output "apply_role_arn" {
+  value = module.github_oidc.apply_role_arn
 }
