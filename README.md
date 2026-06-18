@@ -11,6 +11,8 @@ default VPC used anywhere)
 
 ## Architecture
 
+![AppStack architecture — CloudFront/S3 admin SPA and an ALB fronting ECS-on-EC2 microservices in a dedicated ap-south-1 VPC, with private RDS Postgres, ElastiCache Redis, and OpenSearch, plus SQS-driven workers and GitHub Actions OIDC CI/CD](docs/architecture.drawio.png)
+
 ```
                       Internet
                          │
