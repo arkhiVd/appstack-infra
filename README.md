@@ -13,27 +13,6 @@ default VPC used anywhere)
 
 ![AppStack architecture — CloudFront/S3 admin SPA and an ALB fronting ECS-on-EC2 microservices in a dedicated ap-south-1 VPC, with private RDS Postgres, ElastiCache Redis, and OpenSearch, plus SQS-driven workers and GitHub Actions OIDC CI/CD](docs/architecture.drawio.png)
 
-```
-                      Internet
-                         │
-        ┌────────────────┴───────────────┐
-        │                                │
-   CloudFront (admin SPA)           Application LB
-        │                                │
-     S3 (private, OAC)            ECS on EC2 (t3.micro, public subnet)
-                                         │  ┌─ 8 microservices (auth/user/kyc/
-                                         │  │   business/finance/subscription/
-                                         │  │   notification/integration)
-                                         │  ├─ pdf-ingest-worker
-                                         │  ├─ search-sync-worker
-                                         │  └─ Prometheus + Grafana (self-host)
-                                         │
-        ┌────────────────┬───────────────┼───────────────┐
-        │                │               │               │
-   RDS Postgres    ElastiCache       OpenSearch        SQS
-   (private)        Redis (private)  (private, VPC)   price-sync / pdf-ingest
-```
-
 Everything lives in a **dedicated `10.0.0.0/16` VPC** across 2 AZs:
 
 - **Public subnets** — ALB + the ECS EC2 host (public IP, but locked down by
