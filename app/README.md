@@ -66,6 +66,17 @@ All 8 microservices from the architecture diagram are live.
 - notification-service polls the DB locally; in AWS use SNS fan-out or its own queue
   (it can't share the price-sync queue — competing consumers).
 
+### CI/CD deploy (`.github/workflows/app-deploy.yml`)
+Builds all 10 images, pushes to ECR, and (opt-in) rolls the ECS services. **Inert**
+until wired — `workflow_dispatch` only; uncomment the `push:` block for push-to-deploy.
+Prerequisites (future work, kept out of this push so no Terraform runs):
+1. Secret `AWS_DEPLOY_ROLE_ARN` — an OIDC **deploy** role (ECR push + ECS deploy, no
+   environment gate) added to the `github_oidc` module, separate from the gated apply role.
+2. Align the `ecr_registry` module `repositories` var with the actual app services
+   (the workflow create-if-missing's each repo meanwhile).
+3. ECS services + task definitions per service in `ecs_compute` (the `deploy` job
+   targets `appstack-<service>` family/service names).
+
 ## Layout
 
 ```
