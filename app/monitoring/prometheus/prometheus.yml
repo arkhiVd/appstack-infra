@@ -1,0 +1,32 @@
+global:
+  scrape_interval: 10s
+  evaluation_interval: 10s
+
+scrape_configs:
+  - job_name: appstack
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['auth-service:8080']
+        labels: { service: auth }
+      - targets: ['catalog-service:8080']
+        labels: { service: catalog }
+      - targets: ['search-service:8080']
+        labels: { service: search }
+      - targets: ['inventory-service:8080']
+        labels: { service: inventory }
+      - targets: ['orders-service:8080']
+        labels: { service: orders }
+      - targets: ['notification-service:8080']
+        labels: { service: notification }
+      - targets: ['suppliers-service:8080']
+        labels: { service: suppliers }
+      - targets: ['integration-service:8080']
+        labels: { service: integration }
+      - targets: ['search-sync-worker:9100']
+        labels: { service: search-sync-worker }
+      - targets: ['pdf-ingest-worker:9100']
+        labels: { service: pdf-ingest-worker }
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ['localhost:9090']

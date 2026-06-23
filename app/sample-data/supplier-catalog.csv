@@ -1,0 +1,31 @@
+part_number,name,category,description,unit_price,uom,stock_qty
+MRO-70001,Pneumatic Cylinder 32mm,Pneumatics,Double-acting ISO 15552 cylinder,84.50,EA,40
+MRO-70002,Pneumatic Cylinder 50mm,Pneumatics,Double-acting ISO 15552 cylinder,121.00,EA,25
+MRO-70003,Air Filter Regulator 1/2in,Pneumatics,FRL unit with gauge,56.75,EA,60
+MRO-70004,Solenoid Valve 5/2 24VDC,Pneumatics,Single solenoid spring return,38.20,EA,80
+MRO-70005,Polyurethane Tube 8mm,Pneumatics,Per-metre blue PU tubing,2.40,MTR,500
+MRO-70006,Torque Wrench 1/2in 200Nm,Tools,Click-type calibrated,142.00,EA,12
+MRO-70007,Digital Caliper 150mm,Tools,Stainless IP54,33.90,EA,30
+MRO-70008,Allen Key Set Metric,Tools,1.5-10mm long-arm,18.50,SET,75
+MRO-70009,Grease Gun Pistol Grip,Tools,400g cartridge,27.25,EA,45
+MRO-70010,Infrared Thermometer,Tools,-50 to 550C laser,41.00,EA,22
+MRO-70011,Deep Groove Ball Bearing 6204,Bearings,Sealed 2RS 20x47x14,6.80,EA,300
+MRO-70012,Tapered Roller Bearing 30205,Bearings,Single row metric,14.30,EA,120
+MRO-70013,Pillow Block Bearing UCP205,Bearings,Cast iron mounted unit,19.90,EA,60
+MRO-70014,Hydraulic Hose 1/4in R2,Hydraulics,Two-wire braid per metre,9.10,MTR,200
+MRO-70015,Hydraulic Quick Coupler 1/2in,Hydraulics,ISO 7241-A flat face,28.60,EA,55
+MRO-70016,Gear Pump Group 2,Hydraulics,8cc/rev cast iron,176.00,EA,8
+MRO-70017,Pressure Gauge 0-400bar,Hydraulics,Glycerine filled 63mm,16.75,EA,90
+MRO-70018,O-Ring Kit Nitrile,Seals,382-piece metric assortment,24.99,SET,40
+MRO-70019,Rotary Shaft Seal 25x40x7,Seals,NBR double lip,3.45,EA,250
+MRO-70020,Gasket Sheet 1mm A4,Gaskets,Compressed non-asbestos,11.20,EA,70
+MRO-70021,V-Belt SPA 1250,Belts,Wrapped narrow section,8.40,EA,110
+MRO-70022,Timing Belt HTD 5M,Belts,15mm wide per metre,6.95,MTR,150
+MRO-70023,Hex Bolt M10x50 A2,Fasteners,Stainless DIN 933 box of 50,12.30,BOX,200
+MRO-70024,Nyloc Nut M10 A2,Fasteners,Stainless DIN 985 box of 100,9.80,BOX,180
+MRO-70025,Ball Valve 1in Brass,Valves,Full bore lever handle,14.60,EA,95
+MRO-70026,Gate Valve 2in Cast Iron,Valves,Flanged PN16,62.00,EA,18
+MRO-70027,Synthetic Gear Oil 5L,Lubricants,ISO VG 220 EP,29.50,EA,65
+MRO-70028,Anti-Seize Compound 500g,Lubricants,Copper-based brush top,17.40,EA,48
+MRO-70029,Contactor 3-Pole 25A,Electrical,AC3 24VDC coil,22.10,EA,85
+MRO-70030,Motor Protection Relay,Electrical,Adjustable 4-6A,34.75,EA,33

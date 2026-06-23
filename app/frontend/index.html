@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>appstack — MRO Store Admin</title>
+<style>
+  :root {
+    --bg:#0f172a; --panel:#1e293b; --panel2:#172033; --line:#334155;
+    --text:#e2e8f0; --muted:#94a3b8; --accent:#38bdf8; --accent2:#818cf8;
+    --good:#34d399; --warn:#fbbf24; --bad:#f87171;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.5 system-ui,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--text); }
+  header { display:flex; align-items:center; gap:16px; padding:14px 22px; background:var(--panel); border-bottom:1px solid var(--line); }
+  header h1 { font-size:17px; margin:0; font-weight:650; }
+  header .badge { font-size:11px; color:var(--muted); border:1px solid var(--line); padding:2px 8px; border-radius:99px; }
+  header .spacer { flex:1; }
+  header .who { font-size:13px; color:var(--muted); }
+  button { font:inherit; cursor:pointer; border:1px solid var(--line); background:var(--panel2); color:var(--text); padding:7px 13px; border-radius:8px; }
+  button:hover { border-color:var(--accent); }
+  button.primary { background:var(--accent); color:#06283b; border-color:var(--accent); font-weight:600; }
+  button.ghost { background:transparent; }
+  button.sm { padding:4px 9px; font-size:12px; }
+  input, select { font:inherit; background:var(--panel2); color:var(--text); border:1px solid var(--line); padding:7px 10px; border-radius:8px; }
+  .wrap { display:flex; min-height:calc(100vh - 53px); }
+  nav { width:190px; background:var(--panel); border-right:1px solid var(--line); padding:12px; display:flex; flex-direction:column; gap:4px; }
+  nav a { padding:9px 12px; border-radius:8px; color:var(--muted); cursor:pointer; user-select:none; }
+  nav a:hover { background:var(--panel2); color:var(--text); }
+  nav a.active { background:var(--accent2); color:#0b1020; font-weight:600; }
+  main { flex:1; padding:24px; overflow:auto; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:18px; margin-bottom:18px; }
+  .card h2 { margin:0 0 14px; font-size:15px; }
+  .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); }
+  th { color:var(--muted); font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:.04em; }
+  tr:hover td { background:var(--panel2); }
+  .pill { font-size:11px; padding:2px 8px; border-radius:99px; border:1px solid var(--line); }
+  .pill.pending { color:var(--warn); border-color:var(--warn); }
+  .pill.approved { color:var(--good); border-color:var(--good); }
+  .pill.rejected { color:var(--bad); border-color:var(--bad); }
+  .low { color:var(--bad); font-weight:600; }
+  .muted { color:var(--muted); }
+  .msg { padding:9px 12px; border-radius:8px; margin-top:10px; font-size:13px; }
+  .msg.ok { background:rgba(52,211,153,.12); color:var(--good); }
+  .msg.err { background:rgba(248,113,113,.12); color:var(--bad); }
+  .login { max-width:360px; margin:9vh auto; }
+  .login .card { padding:24px; }
+  .stat { display:inline-block; min-width:120px; }
+  .stat .n { font-size:24px; font-weight:700; }
+  .stat .l { font-size:12px; color:var(--muted); }
+  .basket td { padding:5px 8px; }
+  code { background:var(--panel2); padding:1px 5px; border-radius:5px; font-size:12px; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+const API = "";                          // same origin via gateway
+let TOK = localStorage.getItem("tok") || "";
+let ROLE = localStorage.getItem("role") || "";
+let EMAIL = localStorage.getItem("email") || "";
+let TAB = "search";
+let basket = [];                         // requisition basket [{partId,partNumber,qty}]
+
+const $ = (h) => { const t=document.createElement("template"); t.innerHTML=h.trim(); return t.content.firstChild; };
+const esc = (s) => String(s??"").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));
+
+async function api(path, opts={}) {
+  const h = opts.headers || {};
+  if (TOK) h["Authorization"] = "Bearer " + TOK;
+  if (opts.body && !h["Content-Type"]) h["Content-Type"] = "application/json";
+  const r = await fetch(API + path, { ...opts, headers:h });
+  const txt = await r.text();
+  let data = null; try { data = txt ? JSON.parse(txt) : null; } catch { data = txt; }
+  if (!r.ok) throw { status:r.status, data };
+  return data;
+}
+
+// ---------- auth ----------
+async function login(email, password) {
+  const d = await api("/auth/login", { method:"POST", body:JSON.stringify({ email, password }) });
+  TOK = d.access_token; ROLE = d.role; EMAIL = email;
+  localStorage.setItem("tok",TOK); localStorage.setItem("role",ROLE); localStorage.setItem("email",EMAIL);
+  render();
+}
+function logout(){ TOK=ROLE=EMAIL=""; localStorage.clear(); render(); }
+
+// ---------- render shell ----------
+function render() {
+  const app = document.getElementById("app");
+  app.innerHTML = "";
+  if (!TOK) { app.appendChild(loginView()); return; }
+
+  app.appendChild($(`
+    <header>
+      <h1>appstack <span class="muted">·</span> MRO Store Admin</h1>
+      <span class="badge">ap-south-1 · demo</span>
+      <div class="spacer"></div>
+      <span class="who">${esc(EMAIL)} · <b>${esc(ROLE)}</b></span>
+      <button class="ghost sm" id="logout">Log out</button>
+    </header>`));
+  document.getElementById("logout").onclick = logout;
+
+  const wrap = $(`<div class="wrap"></div>`);
+  const tabs = [
+    ["search","Search"],["catalog","Catalog"],["low","Low stock"],
+    ["requisitions","Requisitions"],["suppliers","Suppliers"],
+    ["upload","Bulk upload"],["notifications","Alerts"]
+  ];
+  const nav = $(`<nav></nav>`);
+  for (const [id,label] of tabs) {
+    const a = $(`<a class="${TAB===id?"active":""}">${label}</a>`);
+    a.onclick = () => { TAB=id; render(); };
+    nav.appendChild(a);
+  }
+  wrap.appendChild(nav);
+  const main = $(`<main id="main"></main>`);
+  wrap.appendChild(main);
+  app.appendChild(wrap);
+
+  ({ search:viewSearch, catalog:viewCatalog, low:viewLow, requisitions:viewReq,
+     suppliers:viewSuppliers, upload:viewUpload, notifications:viewNotif }[TAB])(main);
+}
+
+function loginView() {
+  const v = $(`<div class="login"><div class="card">
+    <h2>Sign in</h2>
+    <div class="row" style="flex-direction:column;align-items:stretch;gap:10px">
+      <input id="email" placeholder="email" value="admin@appstack.local" />
+      <input id="password" type="password" placeholder="password" value="Admin123!" />
+      <button class="primary" id="go">Sign in</button>
+      <div id="lmsg"></div>
+      <div class="muted" style="font-size:12px">admin@appstack.local / Admin123! &nbsp;·&nbsp; or register a staff user via the API</div>
+    </div></div></div>`);
+  v.querySelector("#go").onclick = async () => {
+    try { await login(v.querySelector("#email").value, v.querySelector("#password").value); }
+    catch(e){ v.querySelector("#lmsg").innerHTML = `<div class="msg err">login failed (${e.status||"?"})</div>`; }
+  };
+  return v;
+}
+
+// ---------- helpers ----------
+function tableFrom(cols, rows, rowFn) {
+  const t = $(`<table><thead><tr>${cols.map(c=>`<th>${c}</th>`).join("")}</tr></thead><tbody></tbody></table>`);
+  const tb = t.querySelector("tbody");
+  if (!rows.length) tb.appendChild($(`<tr><td colspan="${cols.length}" class="muted">no results</td></tr>`));
+  for (const r of rows) tb.appendChild(rowFn(r));
+  return t;
+}
+const money = (n) => "₹" + Number(n).toFixed(2);
+
+// ---------- Search (OpenSearch) ----------
+async function viewSearch(main) {
+  const card = $(`<div class="card"><h2>Search parts <span class="muted">· OpenSearch</span></h2>
+    <div class="row">
+      <input id="q" placeholder="bearing, hydraulic, MRO-700..." style="min-width:280px" />
+      <select id="cat"><option value="">all categories</option></select>
+      <button class="primary" id="go">Search</button>
+    </div><div id="res" style="margin-top:14px"></div></div>`);
+  main.appendChild(card);
+  try {
+    const cats = await api("/catalog/categories");
+    for (const c of cats) card.querySelector("#cat").appendChild($(`<option>${esc(c.name)}</option>`));
+  } catch {}
+  const run = async () => {
+    const q = encodeURIComponent(card.querySelector("#q").value);
+    const cat = encodeURIComponent(card.querySelector("#cat").value);
+    const res = card.querySelector("#res");
+    res.innerHTML = `<span class="muted">searching…</span>`;
+    try {
+      const d = await api(`/search?q=${q}&category=${cat}&pageSize=25`);
+      res.innerHTML = "";
+      res.appendChild($(`<div class="muted" style="margin-bottom:8px">${d.total} hit(s)</div>`));
+      res.appendChild(tableFrom(["Part #","Name","Category","Price","Stock"], d.results, r =>
+        $(`<tr><td><code>${esc(r.partNumber)}</code></td><td>${esc(r.name)}</td><td>${esc(r.category)}</td>
+           <td>${money(r.unitPrice)}</td><td class="${r.stockQty<10?"low":""}">${r.stockQty}</td></tr>`)));
+    } catch(e){ res.innerHTML = `<div class="msg err">search failed (${e.status})</div>`; }
+  };
+  card.querySelector("#go").onclick = run;
+  card.querySelector("#q").addEventListener("keydown", e => { if(e.key==="Enter") run(); });
+  run();
+}
+
+// ---------- Catalog ----------
+async function viewCatalog(main) {
+  const card = $(`<div class="card"><h2>Catalog <span class="muted">· Postgres</span></h2>
+    <div class="row"><input id="q" placeholder="filter…" style="min-width:240px"/><button id="go">Filter</button></div>
+    <div id="res" style="margin-top:14px"></div></div>`);
+  main.appendChild(card);
+  const run = async () => {
+    const q = encodeURIComponent(card.querySelector("#q").value);
+    const res = card.querySelector("#res");
+    try {
+      const rows = await api(`/catalog/parts?q=${q}&pageSize=40`);
+      res.innerHTML = "";
+      res.appendChild(tableFrom(["Part #","Name","Category","Price","UoM","Stock"], rows, r =>
+        $(`<tr><td><code>${esc(r.partNumber)}</code></td><td>${esc(r.name)}</td><td>${esc(r.category)}</td>
+           <td>${money(r.unitPrice)}</td><td>${esc(r.uom)}</td><td class="${r.stockQty<10?"low":""}">${r.stockQty}</td></tr>`)));
+    } catch(e){ res.innerHTML = `<div class="msg err">load failed (${e.status})</div>`; }
+  };
+  card.querySelector("#go").onclick = run;
+  run();
+}
+
+// ---------- Low stock (inventory) ----------
+async function viewLow(main) {
+  const card = $(`<div class="card"><h2>Low stock <span class="muted">· inventory-service</span></h2>
+    <div class="row">threshold <input id="th" type="number" value="10" style="width:80px"/><button id="go">Refresh</button></div>
+    <div id="res" style="margin-top:14px"></div></div>`);
+  main.appendChild(card);
+  const run = async () => {
+    const th = card.querySelector("#th").value || 10;
+    const res = card.querySelector("#res");
+    try {
+      const rows = await api(`/inventory/low?threshold=${th}`);
+      res.innerHTML = "";
+      res.appendChild($(`<div class="muted" style="margin-bottom:8px">${rows.length} part(s) below ${th}</div>`));
+      res.appendChild(tableFrom(["Part #","Name","On hand"], rows, r =>
+        $(`<tr><td><code>${esc(r.partNumber)}</code></td><td>${esc(r.name)}</td><td class="low">${r.onHand}</td></tr>`)));
+    } catch(e){ res.innerHTML = `<div class="msg err">load failed (${e.status})</div>`; }
+  };
+  card.querySelector("#go").onclick = run;
+  run();
+}
+
+// ---------- Requisitions (orders) ----------
+async function viewReq(main) {
+  // basket builder
+  const b = $(`<div class="card"><h2>Raise requisition</h2>
+    <div class="row">
+      <input id="pn" placeholder="part number e.g. MRO-00010" style="min-width:240px"/>
+      <input id="qty" type="number" value="1" min="1" style="width:90px"/>
+      <button id="add">Add line</button>
+      <button class="primary" id="submit">Submit requisition</button>
+    </div>
+    <table class="basket" style="margin-top:12px"><thead><tr><th>Part #</th><th>Qty</th><th></th></tr></thead><tbody id="bt"></tbody></table>
+    <div id="bmsg"></div></div>`);
+  main.appendChild(b);
+  const drawBasket = () => {
+    const bt = b.querySelector("#bt"); bt.innerHTML = "";
+    if(!basket.length) bt.appendChild($(`<tr><td colspan="3" class="muted">empty</td></tr>`));
+    basket.forEach((l,i) => {
+      const tr = $(`<tr><td><code>${esc(l.partNumber)}</code></td><td>${l.qty}</td><td></td></tr>`);
+      const rm = $(`<button class="sm ghost">remove</button>`); rm.onclick=()=>{basket.splice(i,1);drawBasket();};
+      tr.lastChild.appendChild(rm); bt.appendChild(tr);
+    });
+  };
+  drawBasket();
+  b.querySelector("#add").onclick = async () => {
+    const pn = b.querySelector("#pn").value.trim(); const qty = parseInt(b.querySelector("#qty").value)||1;
+    const msg = b.querySelector("#bmsg");
+    if(!pn) return;
+    try {
+      const rows = await api(`/catalog/parts?q=${encodeURIComponent(pn)}&pageSize=1`);
+      if(!rows.length){ msg.innerHTML = `<div class="msg err">no part matches ${esc(pn)}</div>`; return; }
+      basket.push({ partId:rows[0].id, partNumber:rows[0].partNumber, qty });
+      b.querySelector("#pn").value=""; msg.innerHTML=""; drawBasket();
+    } catch(e){ msg.innerHTML = `<div class="msg err">lookup failed (${e.status})</div>`; }
+  };
+  b.querySelector("#submit").onclick = async () => {
+    const msg = b.querySelector("#bmsg");
+    if(!basket.length){ msg.innerHTML = `<div class="msg err">basket empty</div>`; return; }
+    try {
+      await api("/orders/requisitions", { method:"POST",
+        body:JSON.stringify({ lines: basket.map(l=>({ partId:l.partId, qty:l.qty })) }) });
+      basket=[]; drawBasket(); msg.innerHTML = `<div class="msg ok">requisition created</div>`;
+      loadReqs();
+    } catch(e){ msg.innerHTML = `<div class="msg err">create failed (${e.status})</div>`; }
+  };
+
+  const list = $(`<div class="card"><h2>Requisitions</h2><div id="reqs"></div></div>`);
+  main.appendChild(list);
+  async function loadReqs(){
+    const box = list.querySelector("#reqs");
+    try {
+      const rows = await api("/orders/requisitions");
+      box.innerHTML = "";
+      box.appendChild(tableFrom(["Requested by","Status","Lines","Created","Action"], rows, r => {
+        const tr = $(`<tr><td>${esc(r.requestedBy)}</td>
+          <td><span class="pill ${r.status}">${r.status}</span></td>
+          <td>${r.lines}</td><td class="muted">${new Date(r.createdAt).toLocaleString()}</td><td></td></tr>`);
+        if (r.status==="pending" && ROLE==="admin") {
+          const ap = $(`<button class="sm primary">Approve</button>`);
+          ap.onclick = async () => {
+            try { await api(`/orders/requisitions/${r.id}/approve`, { method:"PUT", body:"{}" }); loadReqs(); }
+            catch(e){ ap.outerHTML = `<span class="low">${e.data?.error||"failed"} </span>`; }
+          };
+          tr.lastChild.appendChild(ap);
+        } else tr.lastChild.innerHTML = `<span class="muted">—</span>`;
+        return tr;
+      }));
+    } catch(e){ box.innerHTML = `<div class="msg err">load failed (${e.status})</div>`; }
+  }
+  loadReqs();
+}
+
+// ---------- Suppliers ----------
+async function viewSuppliers(main) {
+  const card = $(`<div class="card"><h2>Suppliers</h2><div id="res"></div></div>`);
+  main.appendChild(card);
+  try {
+    const rows = await api("/suppliers");
+    card.querySelector("#res").appendChild(tableFrom(["Code","Name","Email","Phone","Lead (days)"], rows, r =>
+      $(`<tr><td><code>${esc(r.code)}</code></td><td>${esc(r.name)}</td><td class="muted">${esc(r.contactEmail)}</td>
+         <td class="muted">${esc(r.phone)}</td><td>${r.leadTimeDays}</td></tr>`)));
+  } catch(e){ card.querySelector("#res").innerHTML = `<div class="msg err">load failed (${e.status})</div>`; }
+}
+
+// ---------- Bulk upload (S3 -> SQS -> worker) ----------
+async function viewUpload(main) {
+  const card = $(`<div class="card"><h2>Bulk catalog upload <span class="muted">· S3 → SQS → pdf-ingest-worker</span></h2>
+    <p class="muted">Upload a CSV (<code>part_number,name,category,description,unit_price,uom,stock_qty</code>).
+    It lands in the S3 ingest bucket, fires an ObjectCreated event, and the worker bulk-upserts to Postgres then reindexes search.</p>
+    <div class="row"><input type="file" id="file" accept=".csv"/><button class="primary" id="go">Upload</button></div>
+    <div id="msg"></div></div>`);
+  main.appendChild(card);
+  card.querySelector("#go").onclick = async () => {
+    const f = card.querySelector("#file").files[0];
+    const msg = card.querySelector("#msg");
+    if(!f){ msg.innerHTML = `<div class="msg err">choose a file</div>`; return; }
+    const key = "upload-" + Date.now() + ".csv";
+    try {
+      const r = await fetch(`/upload/${key}`, { method:"PUT", body:f, headers:{ "Content-Type":"text/csv" } });
+      if(!r.ok) throw r.status;
+      msg.innerHTML = `<div class="msg ok">uploaded <code>${key}</code> → pipeline triggered. New parts appear in Search within seconds.</div>`;
+    } catch(e){ msg.innerHTML = `<div class="msg err">upload failed (${e})</div>`; }
+  };
+}
+
+// ---------- Notifications ----------
+async function viewNotif(main) {
+  const card = $(`<div class="card"><h2>Alerts <span class="muted">· notification-service</span></h2><div id="res"></div></div>`);
+  main.appendChild(card);
+  try {
+    const rows = await api("/notifications?kind=low_stock&limit=50");
+    card.querySelector("#res").appendChild($(`<div class="muted" style="margin-bottom:8px">${rows.length} low-stock alert(s)</div>`));
+    card.querySelector("#res").appendChild(tableFrom(["When","Message"], rows, r =>
+      $(`<tr><td class="muted">${new Date(r.createdAt).toLocaleString()}</td><td>${esc(r.message)}</td></tr>`)));
+  } catch(e){ card.querySelector("#res").innerHTML = `<div class="msg err">load failed (${e.status})</div>`; }
+}
+
+render();
+</script>
+</body>
+</html>

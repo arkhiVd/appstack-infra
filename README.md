@@ -24,6 +24,31 @@ Everything lives in a **dedicated `10.0.0.0/16` VPC** across 2 AZs:
 
 ---
 
+## Runnable demo application (`app/`)
+
+The `app/` directory holds a working implementation of the platform — an
+**internal MRO spare-parts store** — that runs the *entire* architecture locally
+with Docker Compose, against the **same components** the Terraform provisions
+(real OpenSearch, real SQS/S3 via LocalStack — no substitutes), at **zero AWS cost**.
+
+```bash
+cd app && docker compose up --build
+# admin panel: http://localhost:8090  (admin@appstack.local / Admin123!)
+# Grafana: http://localhost:3000 · Prometheus: http://localhost:9090
+```
+
+16 containers: 8 .NET microservices + 2 SQS workers, Postgres, OpenSearch,
+LocalStack (SQS+S3), Prometheus + Grafana, and an nginx gateway that stands in
+for the ALB path-routing and the CloudFront/S3 SPA origin. Both event pipelines
+(`price-sync` → OpenSearch, S3 `pdf-ingest` → Postgres) work end-to-end. See
+[`app/README.md`](app/README.md) for the full walkthrough and the AWS-deploy notes.
+
+> Local-only for now; AWS deployment (ECR push + ECS task defs) is future work.
+> Pushing `app/` changes does **not** trigger any Terraform workflow — `apply.yml`
+> is path-filtered to `modules/**` and `environments/**` only.
+
+---
+
 ## How it all works together
 
 The platform has **two planes**: a synchronous request plane (user → API → data)

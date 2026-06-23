@@ -1,0 +1,262 @@
+# =============================================================================
+# Local stack — mirrors the AWS architecture 1:1 (no substitutes):
+#   Postgres  -> RDS                Phase 1
+#   OpenSearch-> OpenSearch domain  Phase 2
+#   LocalStack-> SQS queues         Phase 2
+#
+# Services: auth, catalog (publishes price-sync), search (reads OpenSearch),
+#           search-sync-worker (price-sync SQS -> OpenSearch).
+# Runs entirely on the laptop. No AWS resources, no charge.
+# Note: OpenSearch needs ~1GB RAM (capped to 512m heap below).
+#
+#   docker compose up --build
+#   auth    -> http://localhost:8081/swagger
+#   catalog -> http://localhost:8082/swagger
+#   search  -> http://localhost:8083/swagger
+# =============================================================================
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: appstack
+      POSTGRES_PASSWORD: appstack
+      POSTGRES_DB: appstack
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U appstack"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  opensearch:
+    image: opensearchproject/opensearch:2.13.0
+    environment:
+      - discovery.type=single-node
+      - DISABLE_SECURITY_PLUGIN=true
+      - DISABLE_INSTALL_DEMO_CONFIG=true
+      - bootstrap.memory_lock=true
+      - OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    ports:
+      - "9200:9200"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  localstack:
+    image: localstack/localstack:3
+    environment:
+      - SERVICES=sqs,s3
+      - DEBUG=0
+    ports:
+      - "4566:4566"
+    volumes:
+      - ./localstack/init:/etc/localstack/init/ready.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "awslocal sqs get-queue-url --queue-name appstack-price-sync --region ap-south-1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  auth-service:
+    build: ./services/auth-service
+    environment:
+      ConnectionStrings__Postgres: "Host=db;Port=5432;Database=appstack;Username=appstack;Password=appstack"
+      Jwt__Key: "local-dev-shared-secret-change-in-prod-please-32!"
+      Jwt__Issuer: "appstack"
+    ports:
+      - "8081:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  catalog-service:
+    build: ./services/catalog-service
+    environment:
+      ConnectionStrings__Postgres: "Host=db;Port=5432;Database=appstack;Username=appstack;Password=appstack"
+      Jwt__Key: "local-dev-shared-secret-change-in-prod-please-32!"
+      Jwt__Issuer: "appstack"
+      AWS__ServiceUrl: "http://localstack:4566"
+      AWS__Region: "ap-south-1"
+      Queues__PriceSync: "appstack-price-sync"
+    ports:
+      - "8082:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+      localstack:
+        condition: service_healthy
+
+  search-service:
+    build: ./services/search-service
+    environment:
+      OpenSearch__Url: "http://opensearch:9200"
+      OpenSearch__Index: "parts"
+      Jwt__Key: "local-dev-shared-secret-change-in-prod-please-32!"
+      Jwt__Issuer: "appstack"
+    ports:
+      - "8083:8080"
+    depends_on:
+      opensearch:
+        condition: service_healthy
+
+  search-sync-worker:
+    build: ./services/search-sync-worker
+    environment:
+      ConnectionStrings__Postgres: "Host=db;Port=5432;Database=appstack;Username=appstack;Password=appstack"
+      OpenSearch__Url: "http://opensearch:9200"
+      OpenSearch__Index: "parts"
+      AWS__ServiceUrl: "http://localstack:4566"
+      AWS__Region: "ap-south-1"
+      Queues__PriceSync: "appstack-price-sync"
+    depends_on:
+      db:
+        condition: service_healthy
+      opensearch:
+        condition: service_healthy
+      localstack:
+        condition: service_healthy
+
+  inventory-service:
+    build: ./services/inventory-service
+    environment:
+      ConnectionStrings__Postgres: "Host=db;Port=5432;Database=appstack;Username=appstack;Password=appstack"
+      Jwt__Key: "local-dev-shared-secret-change-in-prod-please-32!"
+      Jwt__Issuer: "appstack"
+      AWS__ServiceUrl: "http://localstack:4566"
+      AWS__Region: "ap-south-1"
+      Queues__PriceSync: "appstack-price-sync"
+    ports:
+      - "8084:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+      localstack:
+        condition: service_healthy
+
+  pdf-ingest-worker:
+    build: ./services/pdf-ingest-worker
+    environment:
+      ConnectionStrings__Postgres: "Host=db;Port=5432;Database=appstack;Username=appstack;Password=appstack"
+      AWS__ServiceUrl: "http://localstack:4566"
+      AWS__Region: "ap-south-1"
+      Queues__PdfIngest: "appstack-pdf-ingest"
+      Queues__PriceSync: "appstack-price-sync"
+    depends_on:
+      db:
+        condition: service_healthy
+      localstack:
+        condition: service_healthy
+
+  orders-service:
+    build: ./services/orders-service
+    environment:
+      ConnectionStrings__Postgres: "Host=db;Port=5432;Database=appstack;Username=appstack;Password=appstack"
+      Jwt__Key: "local-dev-shared-secret-change-in-prod-please-32!"
+      Jwt__Issuer: "appstack"
+      AWS__ServiceUrl: "http://localstack:4566"
+      AWS__Region: "ap-south-1"
+      Queues__PriceSync: "appstack-price-sync"
+    ports:
+      - "8085:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+      localstack:
+        condition: service_healthy
+
+  notification-service:
+    build: ./services/notification-service
+    environment:
+      ConnectionStrings__Postgres: "Host=db;Port=5432;Database=appstack;Username=appstack;Password=appstack"
+      Jwt__Key: "local-dev-shared-secret-change-in-prod-please-32!"
+      Jwt__Issuer: "appstack"
+      Notify__LowStockThreshold: "10"
+      Notify__IntervalSeconds: "15"
+    ports:
+      - "8086:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  suppliers-service:
+    build: ./services/suppliers-service
+    environment:
+      ConnectionStrings__Postgres: "Host=db;Port=5432;Database=appstack;Username=appstack;Password=appstack"
+      Jwt__Key: "local-dev-shared-secret-change-in-prod-please-32!"
+      Jwt__Issuer: "appstack"
+    ports:
+      - "8087:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  integration-service:
+    build: ./services/integration-service
+    environment:
+      ConnectionStrings__Postgres: "Host=db;Port=5432;Database=appstack;Username=appstack;Password=appstack"
+      Jwt__Key: "local-dev-shared-secret-change-in-prod-please-32!"
+      Jwt__Issuer: "appstack"
+      Integration__WebhookToken: "dev-webhook-token"
+    ports:
+      - "8088:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+
+  # Gateway = AWS ALB path-routing + CloudFront/S3 SPA origin (combined, local).
+  gateway:
+    image: nginx:1.27-alpine
+    volumes:
+      - ./gateway/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./frontend:/usr/share/nginx/html:ro
+    ports:
+      - "8090:80"
+    depends_on:
+      - auth-service
+      - catalog-service
+      - search-service
+      - inventory-service
+      - orders-service
+      - notification-service
+      - suppliers-service
+      - integration-service
+      - localstack
+
+volumes:
+  pgdata:

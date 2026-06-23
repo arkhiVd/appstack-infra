@@ -1,0 +1,11 @@
+# .NET build output
+**/bin/
+**/obj/
+
+# Node / Angular (future frontend build)
+**/node_modules/
+**/dist/
+
+# Local env overrides
+.env
+*.local
