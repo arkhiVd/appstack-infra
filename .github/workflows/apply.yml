@@ -1,13 +1,16 @@
 name: Terraform Apply
 
-# Applies on merge to main. Guarded by a GitHub Environment ("production")
-# so a reviewer must approve before the apply runs.
+# GitOps: on merge to main (infra paths), provision the stack, push all images to
+# ECR, then roll the ECS services so they pull the new images. One merge = full
+# deploy. Gated by the "production" GitHub Environment (remove its required
+# reviewer to make it fully auto).
 on:
   push:
     branches: [main]
     paths:
       - "modules/**"
       - "environments/**"
+      - ".github/workflows/apply.yml"
   workflow_dispatch:
 
 permissions:
@@ -18,11 +21,13 @@ env:
   TF_VERSION: "1.9.5"
   WORKING_DIR: environments/dev
   AWS_REGION: ap-south-1
+  PROJECT: appstack
+  ECS_CLUSTER: appstack-cluster
 
 jobs:
   apply:
     runs-on: ubuntu-latest
-    environment: production   # requires manual approval in repo settings
+    environment: production
     steps:
       - uses: actions/checkout@v6
 
@@ -45,3 +50,68 @@ jobs:
         env:
           TF_VAR_db_password: ${{ secrets.TF_VAR_DB_PASSWORD }}
         run: terraform apply -auto-approve -input=false -no-color
+
+  # Build + push all 10 images to the ECR repos terraform just created.
+  build-push:
+    needs: apply
+    runs-on: ubuntu-latest
+    environment: production
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: auth,               context: app/services/auth-service }
+          - { name: catalog,            context: app/services/catalog-service }
+          - { name: search,             context: app/services/search-service }
+          - { name: inventory,          context: app/services/inventory-service }
+          - { name: orders,             context: app/services/orders-service }
+          - { name: notification,       context: app/services/notification-service }
+          - { name: suppliers,          context: app/services/suppliers-service }
+          - { name: integration,        context: app/services/integration-service }
+          - { name: search-sync-worker, context: app/services/search-sync-worker }
+          - { name: pdf-ingest-worker,  context: app/services/pdf-ingest-worker }
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.AWS_APPLY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          IMAGE="${REGISTRY}/${PROJECT}/${{ matrix.name }}"
+          docker build -t "$IMAGE:latest" -t "$IMAGE:${{ github.sha }}" "${{ matrix.context }}"
+          docker push "$IMAGE:latest"
+          docker push "$IMAGE:${{ github.sha }}"
+
+  # Force each service to redeploy so it pulls the freshly pushed :latest image.
+  rollout:
+    needs: build-push
+    runs-on: ubuntu-latest
+    environment: production
+    strategy:
+      fail-fast: false
+      matrix:
+        name: [auth, catalog, search, inventory, orders, notification,
+               suppliers, integration, search-sync-worker, pdf-ingest-worker]
+    steps:
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.AWS_APPLY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Force new deployment
+        run: |
+          aws ecs update-service --cluster "$ECS_CLUSTER" \
+            --service "${PROJECT}-${{ matrix.name }}" \
+            --force-new-deployment >/dev/null
+          echo "rolled ${PROJECT}-${{ matrix.name }}"

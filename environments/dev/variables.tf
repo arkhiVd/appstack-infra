@@ -40,3 +40,15 @@ variable "image_tag" {
   type        = string
   default     = "latest"
 }
+
+variable "ecs_instance_type" {
+  description = "ECS host instance type. t3.micro = free tier; use a few of them rather than one bigger paid instance."
+  type        = string
+  default     = "t3.micro"
+}
+
+variable "ecs_host_count" {
+  description = "Number of ECS EC2 hosts. 3x t3.micro fits the 10 tasks while staying free-tier."
+  type        = number
+  default     = 3
+}

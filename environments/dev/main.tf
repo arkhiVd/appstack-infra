@@ -42,6 +42,12 @@ module "ecs_compute" {
   alb_sg_id         = module.vpc_network.alb_sg_id
   ecs_sg_id         = module.vpc_network.ecs_sg_id
 
+  # 3x t3.micro (free-tier eligible) instead of one t3.medium: spreads the 10
+  # tasks (~2.5 GB) across ~3 GB of host RAM while staying on free-tier instances.
+  instance_type = var.ecs_instance_type
+  asg_desired   = var.ecs_host_count
+  asg_max       = var.ecs_host_count
+
   depends_on = [module.vpc_network]
 }
 
