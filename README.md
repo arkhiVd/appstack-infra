@@ -41,11 +41,27 @@ cd app && docker compose up --build
 LocalStack (SQS+S3), Prometheus + Grafana, and an nginx gateway that stands in
 for the ALB path-routing and the CloudFront/S3 SPA origin. Both event pipelines
 (`price-sync` → OpenSearch, S3 `pdf-ingest` → Postgres) work end-to-end. See
-[`app/README.md`](app/README.md) for the full walkthrough and the AWS-deploy notes.
+[`app/README.md`](app/README.md) for the full walkthrough.
 
-> Local-only for now; AWS deployment (ECR push + ECS task defs) is future work.
-> Pushing `app/` changes does **not** trigger any Terraform workflow — `apply.yml`
-> is path-filtered to `modules/**` and `environments/**` only.
+### Deployed & validated on AWS (GitOps)
+
+The same app has been **provisioned and verified end-to-end on real AWS**. A merge
+to `main` runs one pipeline (`apply.yml`):
+
+```
+terraform apply → publish SPA to S3 + CloudFront invalidate
+               → build & push 11 images to ECR
+               → db-migrate (schema/seed into RDS, one-shot ECS task)
+               → roll the 10 ECS services
+```
+
+- The `ecs_services` module turns the cluster into running services: per-service
+  ECS task definitions, services, ALB target groups + path rules.
+- **CloudFront serves the SPA (S3) and the API (ALB) from one origin → no CORS.**
+- Validated live through the CloudFront URL: login, OpenSearch search, catalog,
+  suppliers, requisition approve (stock deduct), inventory, low-stock alerts, and
+  the CSV bulk-upload pipeline (S3 → SQS → worker → Postgres → search).
+- Free-tier friendly (4× t3.micro hosts) and torn down with `destroy.yml`.
 
 ---
 
@@ -116,7 +132,8 @@ everything else consumes its subnet IDs and security-group IDs:
 | `elasticache_redis`      | `private_subnet_ids`, `data_sg_id`       | Redis endpoint                    |
 | `opensearch`             | `private_subnet_ids[0]`, `data_sg_id`    | Search domain endpoint            |
 | `ecs_compute`            | `vpc_id`, `public_subnet_ids`, `alb_sg_id`, `ecs_sg_id` | ECS cluster, ASG, ALB DNS |
-| `s3_cloudfront_frontend` | — (own bucket + CDN)                     | CloudFront domain                 |
+| `ecs_services`           | cluster, ALB listener, ECR URLs, DB/OpenSearch/SQS      | 10 task defs + services + TGs + path rules, db-migrate task |
+| `s3_cloudfront_frontend` | `alb_dns_name` (API origin)              | CloudFront domain (SPA + API, one origin) |
 | `sqs_messaging`          | — (own queues + PDF bucket)              | Queue URLs, worker IAM policy     |
 
 ### Security model (least privilege, layered SGs)
@@ -165,13 +182,15 @@ modules/
   rds_postgres/           Postgres (private, logical replication on)
   elasticache_redis/      Redis (private)
   ecs_compute/            ECS cluster, EC2 ASG, ALB, IAM (incl. SSM)
-  s3_cloudfront_frontend/ Admin SPA: private S3 + CloudFront OAC
+  ecs_services/           Per-service task defs + services + ALB target groups/rules + db-migrate
+  s3_cloudfront_frontend/ Admin SPA: private S3 + CloudFront (S3 + ALB origins, no CORS)
   sqs_messaging/          price-sync + pdf-ingest queues, DLQs, PDF bucket events
   opensearch/             Full-text search domain (VPC, SG-locked)
 environments/
   dev/                    Wires modules with free-tier sizes
+app/                      Runnable MRO-store app (8 services + 2 workers + SPA)
 bootstrap/                One-time S3 + DynamoDB remote state backend
-.github/workflows/        plan (read-only) · apply (approval) · destroy (manual)
+.github/workflows/        plan (PR) · apply (merge → provision + deploy) · destroy (manual)
 ```
 
 ---

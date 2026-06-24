@@ -59,23 +59,26 @@ All 8 microservices from the architecture diagram are live.
   from the `sqs_messaging` module.
 - Every Dockerfile is multi-stage and reused as-is for ECR/ECS.
 
-### When deploying to AWS
-- LocalStack S3 notification fires on `ObjectCreated:*`; repo Terraform `sqs_messaging`
-  filters `.pdf` — widen/parameterize that suffix (bulk import is CSV).
-- The nginx gateway splits into ALB listener rules + CloudFront/S3 for the SPA.
-- notification-service polls the DB locally; in AWS use SNS fan-out or its own queue
-  (it can't share the price-sync queue — competing consumers).
+### On AWS (implemented & validated)
+The same architecture runs on real AWS — the local pieces map 1:1:
 
-### CI/CD deploy (`.github/workflows/app-deploy.yml`)
-Builds all 10 images, pushes to ECR, and (opt-in) rolls the ECS services. **Inert**
-until wired — `workflow_dispatch` only; uncomment the `push:` block for push-to-deploy.
-Prerequisites (future work, kept out of this push so no Terraform runs):
-1. Secret `AWS_DEPLOY_ROLE_ARN` — an OIDC **deploy** role (ECR push + ECS deploy, no
-   environment gate) added to the `github_oidc` module, separate from the gated apply role.
-2. Align the `ecr_registry` module `repositories` var with the actual app services
-   (the workflow create-if-missing's each repo meanwhile).
-3. ECS services + task definitions per service in `ecs_compute` (the `deploy` job
-   targets `appstack-<service>` family/service names).
+| Local | AWS |
+|-------|-----|
+| nginx gateway (path routing + SPA origin) | **CloudFront** (S3 SPA origin + ALB API origin → one origin, no CORS) + **ALB** path rules |
+| Docker Postgres `db/init` entrypoint | **`db-migrate`** one-shot ECS task applies the same SQL to RDS |
+| LocalStack S3 `ObjectCreated:*` | real S3 event → `pdf-ingest` SQS (no suffix filter — bulk import is CSV) |
+| `docker compose` services | **ECS-on-EC2** services (`ecs_services` module) |
+
+`notification-service` polls the DB (locally and on AWS) — it can't share the
+price-sync queue (competing consumers would steal messages from `search-sync-worker`);
+in production this becomes SNS fan-out or its own queue.
+
+### CI/CD — one-merge GitOps deploy (`.github/workflows/apply.yml`)
+A merge to `main` runs: `terraform apply` → publish SPA to S3 + CloudFront invalidate
+→ build & push 11 images to ECR → `db-migrate` → roll the 10 ECS services → print the
+site URL. Tear down with `destroy.yml` (`confirm=destroy-appstack`). The standalone
+`app-deploy.yml` (build/push + optional ECS rollout, `workflow_dispatch`) remains as a
+manual image-refresh path.
 
 ## Layout
 
