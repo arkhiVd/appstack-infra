@@ -100,10 +100,11 @@ resource "aws_sqs_queue_policy" "pdf_ingest" {
 resource "aws_s3_bucket_notification" "pdf" {
   bucket = aws_s3_bucket.pdf.id
 
+  # No suffix filter: bulk imports are CSV (and the worker dispatches by
+  # extension anyway). Fire on every object creation, matching local LocalStack.
   queue {
-    queue_arn     = aws_sqs_queue.pdf_ingest.arn
-    events        = ["s3:ObjectCreated:*"]
-    filter_suffix = ".pdf"
+    queue_arn = aws_sqs_queue.pdf_ingest.arn
+    events    = ["s3:ObjectCreated:*"]
   }
 
   depends_on = [aws_sqs_queue_policy.pdf_ingest]
