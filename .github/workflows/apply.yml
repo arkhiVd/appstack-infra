@@ -62,7 +62,8 @@ jobs:
 
       - name: Show site URL
         working-directory: ${{ env.WORKING_DIR }}
-        run: echo "Admin panel: https://$(terraform output -raw admin_cloudfront_domain)"
+        run: |
+          echo "Admin panel: https://$(terraform output -raw admin_cloudfront_domain)"
 
   # Build + push all 10 images to the ECR repos terraform just created.
   build-push:
