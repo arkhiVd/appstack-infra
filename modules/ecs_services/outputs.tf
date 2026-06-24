@@ -12,3 +12,8 @@ output "task_role_arn" {
   description = "Shared application task role ARN"
   value       = aws_iam_role.task.arn
 }
+
+output "migrate_task_family" {
+  description = "DB migration task definition family (run once after apply)"
+  value       = aws_ecs_task_definition.migrate.family
+}

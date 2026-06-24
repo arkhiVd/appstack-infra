@@ -17,6 +17,7 @@ variable "repositories" {
     "integration",
     "pdf-ingest-worker",
     "search-sync-worker",
+    "db-migrate",
   ]
 }
 

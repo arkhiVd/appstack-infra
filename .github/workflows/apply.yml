@@ -73,16 +73,18 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: auth,               context: app/services/auth-service }
-          - { name: catalog,            context: app/services/catalog-service }
-          - { name: search,             context: app/services/search-service }
-          - { name: inventory,          context: app/services/inventory-service }
-          - { name: orders,             context: app/services/orders-service }
-          - { name: notification,       context: app/services/notification-service }
-          - { name: suppliers,          context: app/services/suppliers-service }
-          - { name: integration,        context: app/services/integration-service }
-          - { name: search-sync-worker, context: app/services/search-sync-worker }
-          - { name: pdf-ingest-worker,  context: app/services/pdf-ingest-worker }
+          - { name: auth,               context: app/services/auth-service,        dockerfile: app/services/auth-service/Dockerfile }
+          - { name: catalog,            context: app/services/catalog-service,     dockerfile: app/services/catalog-service/Dockerfile }
+          - { name: search,             context: app/services/search-service,      dockerfile: app/services/search-service/Dockerfile }
+          - { name: inventory,          context: app/services/inventory-service,   dockerfile: app/services/inventory-service/Dockerfile }
+          - { name: orders,             context: app/services/orders-service,      dockerfile: app/services/orders-service/Dockerfile }
+          - { name: notification,       context: app/services/notification-service, dockerfile: app/services/notification-service/Dockerfile }
+          - { name: suppliers,          context: app/services/suppliers-service,   dockerfile: app/services/suppliers-service/Dockerfile }
+          - { name: integration,        context: app/services/integration-service, dockerfile: app/services/integration-service/Dockerfile }
+          - { name: search-sync-worker, context: app/services/search-sync-worker,  dockerfile: app/services/search-sync-worker/Dockerfile }
+          - { name: pdf-ingest-worker,  context: app/services/pdf-ingest-worker,   dockerfile: app/services/pdf-ingest-worker/Dockerfile }
+          # migrate image bundles db/init SQL, so its build context is app/
+          - { name: db-migrate,         context: app,                              dockerfile: app/services/db-migrate/Dockerfile }
     steps:
       - uses: actions/checkout@v6
 
@@ -101,13 +103,38 @@ jobs:
           REGISTRY: ${{ steps.ecr.outputs.registry }}
         run: |
           IMAGE="${REGISTRY}/${PROJECT}/${{ matrix.name }}"
-          docker build -t "$IMAGE:latest" -t "$IMAGE:${{ github.sha }}" "${{ matrix.context }}"
+          docker build -f "${{ matrix.dockerfile }}" -t "$IMAGE:latest" -t "$IMAGE:${{ github.sha }}" "${{ matrix.context }}"
           docker push "$IMAGE:latest"
           docker push "$IMAGE:${{ github.sha }}"
 
+  # Apply the schema/seed to RDS from inside the VPC (one-shot ECS task), wait for
+  # it to finish, and fail the deploy if it errors.
+  migrate:
+    needs: build-push
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.AWS_APPLY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Run db-migrate task and wait
+        run: |
+          TASK_ARN=$(aws ecs run-task --cluster "$ECS_CLUSTER" \
+            --task-definition "${PROJECT}-db-migrate" --launch-type EC2 \
+            --count 1 --query 'tasks[0].taskArn' --output text)
+          echo "migrate task: $TASK_ARN"
+          aws ecs wait tasks-stopped --cluster "$ECS_CLUSTER" --tasks "$TASK_ARN"
+          CODE=$(aws ecs describe-tasks --cluster "$ECS_CLUSTER" --tasks "$TASK_ARN" \
+            --query 'tasks[0].containers[0].exitCode' --output text)
+          echo "migrate exit code: $CODE"
+          [ "$CODE" = "0" ] || { echo "::error::db migration failed"; exit 1; }
+
   # Force each service to redeploy so it pulls the freshly pushed :latest image.
   rollout:
-    needs: build-push
+    needs: migrate
     runs-on: ubuntu-latest
     environment: production
     strategy:

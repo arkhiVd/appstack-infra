@@ -192,6 +192,12 @@ resource "aws_ecs_service" "this" {
 
   health_check_grace_period_seconds = each.value.web ? 60 : null
 
+  # Spread tasks across the EC2 hosts so 10 tasks don't pile onto one t3.micro.
+  ordered_placement_strategy {
+    type  = "spread"
+    field = "instanceId"
+  }
+
   dynamic "load_balancer" {
     for_each = each.value.web ? [1] : []
     content {
@@ -202,4 +208,44 @@ resource "aws_ecs_service" "this" {
   }
 
   depends_on = [aws_lb_listener_rule.this]
+}
+
+# -----------------------------------------------------------------------------
+# One-shot DB migration task (no service). Applies the schema/seed SQL to RDS
+# from inside the VPC; the CI workflow runs it once after apply, before rollout.
+# -----------------------------------------------------------------------------
+resource "aws_cloudwatch_log_group" "migrate" {
+  name              = "/ecs/${var.project_name}/db-migrate"
+  retention_in_days = var.log_retention_days
+}
+
+resource "aws_ecs_task_definition" "migrate" {
+  family                   = "${var.project_name}-db-migrate"
+  requires_compatibilities = ["EC2"]
+  network_mode             = "bridge"
+  execution_role_arn       = var.task_execution_role_arn
+  cpu                      = "128"
+  memory                   = "256"
+
+  container_definitions = jsonencode([{
+    name              = "db-migrate"
+    image             = "${var.ecr_repository_urls["db-migrate"]}:${var.image_tag}"
+    essential         = true
+    memoryReservation = 128
+    environment = [
+      { name = "PGHOST", value = var.db_host },
+      { name = "PGPORT", value = "5432" },
+      { name = "PGUSER", value = var.db_username },
+      { name = "PGPASSWORD", value = var.db_password },
+      { name = "PGDATABASE", value = var.db_name },
+    ]
+    logConfiguration = {
+      logDriver = "awslogs"
+      options = {
+        "awslogs-group"         = aws_cloudwatch_log_group.migrate.name
+        "awslogs-region"        = var.region
+        "awslogs-stream-prefix" = "ecs"
+      }
+    }
+  }])
 }

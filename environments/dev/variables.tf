@@ -48,7 +48,7 @@ variable "ecs_instance_type" {
 }
 
 variable "ecs_host_count" {
-  description = "Number of ECS EC2 hosts. 3x t3.micro fits the 10 tasks while staying free-tier."
+  description = "Number of ECS EC2 hosts. 4x t3.micro fits the 10 service tasks + the one-shot migrate task with placement headroom, while staying free-tier."
   type        = number
-  default     = 3
+  default     = 4
 }
