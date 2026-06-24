@@ -8,12 +8,12 @@ variable "repositories" {
   type        = list(string)
   default = [
     "auth",
-    "user",
-    "kyc",
-    "business",
-    "finance",
-    "subscription",
+    "catalog",
+    "search",
+    "inventory",
+    "orders",
     "notification",
+    "suppliers",
     "integration",
     "pdf-ingest-worker",
     "search-sync-worker",

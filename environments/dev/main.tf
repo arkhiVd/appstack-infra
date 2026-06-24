@@ -64,3 +64,33 @@ module "opensearch" {
   depends_on = [module.vpc_network]
 }
 
+module "ecs_services" {
+  source = "../../modules/ecs_services"
+
+  project_name            = var.project_name
+  region                  = var.region
+  vpc_id                  = module.vpc_network.vpc_id
+  cluster_arn             = module.ecs_compute.cluster_arn
+  alb_listener_arn        = module.ecs_compute.http_listener_arn
+  task_execution_role_arn = module.ecs_compute.task_execution_role_arn
+  ecr_repository_urls     = module.ecr_registry.repository_urls
+  image_tag               = var.image_tag
+  worker_policy_arn       = module.sqs_messaging.worker_policy_arn
+
+  db_host               = module.rds_postgres.address
+  db_name               = module.rds_postgres.db_name
+  db_password           = var.db_password
+  opensearch_endpoint   = module.opensearch.endpoint
+  price_sync_queue_name = "${var.project_name}-price-sync"
+  pdf_ingest_queue_name = "${var.project_name}-pdf-ingest"
+  jwt_key               = var.jwt_key
+
+  depends_on = [
+    module.ecs_compute,
+    module.rds_postgres,
+    module.opensearch,
+    module.sqs_messaging,
+    module.ecr_registry,
+  ]
+}
+

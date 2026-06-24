@@ -27,3 +27,16 @@ variable "db_password" {
   type        = string
   sensitive   = true
 }
+
+variable "jwt_key" {
+  description = "Shared JWT signing key for the services (>=32 bytes). Supply via TF_VAR_jwt_key."
+  type        = string
+  sensitive   = true
+  default     = "change-me-in-prod-please-32bytes-minimum-key!"
+}
+
+variable "image_tag" {
+  description = "Container image tag to deploy for every ECS service (git SHA or 'latest')."
+  type        = string
+  default     = "latest"
+}

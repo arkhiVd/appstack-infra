@@ -69,3 +69,7 @@ output "pdf_bucket_name" {
 output "opensearch_endpoint" {
   value = module.opensearch.endpoint
 }
+
+output "ecs_service_names" {
+  value = module.ecs_services.service_names
+}

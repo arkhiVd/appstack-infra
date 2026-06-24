@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Amazon;
 using Amazon.Runtime;
 using Amazon.SQS;
 using Amazon.SQS.Model;
@@ -21,7 +22,7 @@ string Env(string key, string fallback) =>
 
 var connStr = Env("ConnectionStrings__Postgres",
     "Host=db;Port=5432;Database=appstack;Username=appstack;Password=appstack");
-var sqsServiceUrl = Env("AWS__ServiceUrl", "http://localstack:4566");
+var sqsServiceUrl = Env("AWS__ServiceUrl", "");   // empty in AWS -> real SQS endpoint
 var awsRegion = Env("AWS__Region", "ap-south-1");
 var queueName = Env("Queues__PriceSync", "appstack-price-sync");
 var osUrl = Env("OpenSearch__Url", "http://opensearch:9200");
@@ -39,8 +40,12 @@ await using var db = new NpgsqlDataSourceBuilder(connStr).Build();
 var osSettings = new ConnectionSettings(new Uri(osUrl)).DefaultIndex(indexName);
 var os = new OpenSearchClient(osSettings);
 
-var sqsConfig = new AmazonSQSConfig { ServiceURL = sqsServiceUrl, AuthenticationRegion = awsRegion };
-var sqs = new AmazonSQSClient(new BasicAWSCredentials("test", "test"), sqsConfig);
+// Local (LocalStack) uses an explicit ServiceURL + dummy creds; on AWS we leave
+// both unset so the SDK uses the real regional endpoint + the task-role creds.
+IAmazonSQS sqs = string.IsNullOrEmpty(sqsServiceUrl)
+    ? new AmazonSQSClient(new AmazonSQSConfig { RegionEndpoint = RegionEndpoint.GetBySystemName(awsRegion) })
+    : new AmazonSQSClient(new BasicAWSCredentials("test", "test"),
+        new AmazonSQSConfig { ServiceURL = sqsServiceUrl, AuthenticationRegion = awsRegion });
 
 Log("starting");
 new KestrelMetricServer(port: 9100).Start();   // expose /metrics for Prometheus

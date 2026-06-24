@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Amazon;
 using Amazon.Runtime;
 using Amazon.S3;
 using Amazon.S3.Model;
@@ -24,27 +25,25 @@ string Env(string key, string fallback) =>
 
 var connStr = Env("ConnectionStrings__Postgres",
     "Host=db;Port=5432;Database=appstack;Username=appstack;Password=appstack");
-var serviceUrl = Env("AWS__ServiceUrl", "http://localstack:4566");
+var serviceUrl = Env("AWS__ServiceUrl", "");   // empty in AWS -> real endpoints
 var awsRegion = Env("AWS__Region", "ap-south-1");
 var pdfQueue = Env("Queues__PdfIngest", "appstack-pdf-ingest");
 var priceSyncQueue = Env("Queues__PriceSync", "appstack-price-sync");
 
 var jsonOpts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
 var creds = new BasicAWSCredentials("test", "test");
+var region = RegionEndpoint.GetBySystemName(awsRegion);
 
 await using var db = new NpgsqlDataSourceBuilder(connStr).Build();
 
-var s3 = new AmazonS3Client(creds, new AmazonS3Config
-{
-    ServiceURL = serviceUrl,
-    ForcePathStyle = true,                 // LocalStack needs path-style
-    AuthenticationRegion = awsRegion,
-});
-var sqs = new AmazonSQSClient(creds, new AmazonSQSConfig
-{
-    ServiceURL = serviceUrl,
-    AuthenticationRegion = awsRegion,
-});
+// Local (LocalStack): explicit ServiceURL + path-style + dummy creds.
+// AWS: real regional endpoints + task-role creds (no ServiceURL).
+IAmazonS3 s3 = string.IsNullOrEmpty(serviceUrl)
+    ? new AmazonS3Client(new AmazonS3Config { RegionEndpoint = region })
+    : new AmazonS3Client(creds, new AmazonS3Config { ServiceURL = serviceUrl, ForcePathStyle = true, AuthenticationRegion = awsRegion });
+IAmazonSQS sqs = string.IsNullOrEmpty(serviceUrl)
+    ? new AmazonSQSClient(new AmazonSQSConfig { RegionEndpoint = region })
+    : new AmazonSQSClient(creds, new AmazonSQSConfig { ServiceURL = serviceUrl, AuthenticationRegion = awsRegion });
 
 Log("starting");
 new KestrelMetricServer(port: 9100).Start();   // expose /metrics for Prometheus
