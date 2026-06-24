@@ -50,6 +50,7 @@ locals {
     { name = "AWS_REGION", value = var.region },
     { name = "Queues__PriceSync", value = var.price_sync_queue_name },
     { name = "Queues__PdfIngest", value = var.pdf_ingest_queue_name },
+    { name = "Storage__PdfBucket", value = var.pdf_bucket_name },
   ]
 }
 
@@ -73,6 +74,20 @@ resource "aws_iam_role" "task" {
 resource "aws_iam_role_policy_attachment" "task_worker" {
   role       = aws_iam_role.task.name
   policy_arn = var.worker_policy_arn
+}
+
+# catalog writes bulk-import uploads into the PDF/CSV ingest bucket.
+resource "aws_iam_role_policy" "task_s3_put" {
+  name = "pdf-bucket-put"
+  role = aws_iam_role.task.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["s3:PutObject"]
+      Resource = "arn:aws:s3:::${var.pdf_bucket_name}/*"
+    }]
+  })
 }
 
 # -----------------------------------------------------------------------------

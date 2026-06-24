@@ -54,6 +54,10 @@ output "admin_cloudfront_domain" {
   value = module.s3_cloudfront_frontend.cloudfront_domain_name
 }
 
+output "admin_cloudfront_distribution_id" {
+  value = module.s3_cloudfront_frontend.cloudfront_distribution_id
+}
+
 output "price_sync_queue_url" {
   value = module.sqs_messaging.price_sync_queue_url
 }

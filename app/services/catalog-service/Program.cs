@@ -1,6 +1,9 @@
 using System.Text;
 using System.Text.Json;
+using Amazon;
 using Amazon.Runtime;
+using Amazon.S3;
+using Amazon.S3.Model;
 using Amazon.SQS;
 using Amazon.SQS.Model;
 using Dapper;
@@ -19,8 +22,18 @@ var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "appstack";
 var sqsServiceUrl = builder.Configuration["AWS:ServiceUrl"]; // null in AWS -> default endpoint
 var awsRegion = builder.Configuration["AWS:Region"] ?? "ap-south-1";
 var priceSyncQueue = builder.Configuration["Queues:PriceSync"] ?? "appstack-price-sync";
+var pdfBucket = builder.Configuration["Storage:PdfBucket"] ?? "appstack-pdf-ingest";
 
 builder.Services.AddSingleton(_ => new NpgsqlDataSourceBuilder(connStr).Build());
+
+// S3 client for server-side bulk-import upload (browser -> API -> S3 ingest
+// bucket). Local uses LocalStack (path-style + dummy creds); AWS uses the real
+// regional endpoint + task-role creds.
+builder.Services.AddSingleton<IAmazonS3>(_ =>
+    string.IsNullOrEmpty(sqsServiceUrl)
+        ? new AmazonS3Client(new AmazonS3Config { RegionEndpoint = RegionEndpoint.GetBySystemName(awsRegion) })
+        : new AmazonS3Client(new BasicAWSCredentials("test", "test"),
+            new AmazonS3Config { ServiceURL = sqsServiceUrl, ForcePathStyle = true, AuthenticationRegion = awsRegion }));
 
 // SQS publisher — fires a price-sync event after every catalog write so the
 // search-sync-worker can update OpenSearch. Decoupled: a publish failure is
@@ -146,6 +159,24 @@ app.MapDelete("/catalog/parts/{id:guid}", async (Guid id, NpgsqlDataSource db, P
     if (n > 0) await pub.PublishAsync(id, "delete");
     return n == 0 ? Results.NotFound() : Results.NoContent();
 }).RequireAuthorization(p => p.RequireRole("admin"));
+
+// Bulk import: admin uploads a CSV through the API; we write it to the S3 ingest
+// bucket server-side, which fires the ObjectCreated -> pdf-ingest pipeline. Going
+// through the API keeps it same-origin (no browser->S3 CORS, no presigned URLs).
+app.MapPost("/catalog/import", async (IFormFile file, IAmazonS3 s3) =>
+{
+    if (file is null || file.Length == 0) return Results.BadRequest(new { error = "empty file" });
+    var key = $"upload-{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}-{Guid.NewGuid():N}.csv";
+    await using var stream = file.OpenReadStream();
+    await s3.PutObjectAsync(new PutObjectRequest
+    {
+        BucketName  = pdfBucket,
+        Key         = key,
+        InputStream = stream,
+        ContentType = "text/csv",
+    });
+    return Results.Accepted($"s3://{pdfBucket}/{key}", new { key });
+}).RequireAuthorization(p => p.RequireRole("admin")).DisableAntiforgery();
 
 app.Run();
 

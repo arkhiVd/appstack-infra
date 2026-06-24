@@ -83,6 +83,11 @@ variable "pdf_ingest_queue_name" {
   type        = string
 }
 
+variable "pdf_bucket_name" {
+  description = "S3 PDF/CSV ingest bucket name (catalog writes uploads here)"
+  type        = string
+}
+
 variable "jwt_key" {
   description = "Shared JWT signing key (>=32 bytes)"
   type        = string

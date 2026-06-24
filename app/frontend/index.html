@@ -321,12 +321,14 @@ async function viewUpload(main) {
     const f = card.querySelector("#file").files[0];
     const msg = card.querySelector("#msg");
     if(!f){ msg.innerHTML = `<div class="msg err">choose a file</div>`; return; }
-    const key = "upload-" + Date.now() + ".csv";
+    const fd = new FormData(); fd.append("file", f, f.name);
     try {
-      const r = await fetch(`/upload/${key}`, { method:"PUT", body:f, headers:{ "Content-Type":"text/csv" } });
+      // multipart POST through the API (same origin) -> S3 ingest bucket -> pipeline
+      const r = await fetch("/catalog/import", { method:"POST", body:fd, headers:{ "Authorization":"Bearer "+TOK } });
       if(!r.ok) throw r.status;
-      msg.innerHTML = `<div class="msg ok">uploaded <code>${key}</code> → pipeline triggered. New parts appear in Search within seconds.</div>`;
-    } catch(e){ msg.innerHTML = `<div class="msg err">upload failed (${e})</div>`; }
+      const d = await r.json();
+      msg.innerHTML = `<div class="msg ok">uploaded <code>${esc(d.key)}</code> → pipeline triggered. New parts appear in Search within seconds.</div>`;
+    } catch(e){ msg.innerHTML = `<div class="msg err">upload failed (${e}) — admin only</div>`; }
   };
 }
 

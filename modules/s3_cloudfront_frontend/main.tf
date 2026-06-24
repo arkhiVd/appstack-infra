@@ -63,6 +63,21 @@ resource "aws_cloudfront_distribution" "site" {
     origin_access_control_id = aws_cloudfront_origin_access_control.site.id
   }
 
+  # ALB origin for the API. Serving the SPA and the API from the SAME CloudFront
+  # domain means the browser makes same-origin calls -> no CORS. The ALB has no
+  # TLS listener, so CloudFront talks to it over HTTP (viewer side is still HTTPS).
+  origin {
+    domain_name = var.alb_dns_name
+    origin_id   = "alb-api"
+    custom_origin_config {
+      http_port              = 80
+      https_port             = 443
+      origin_protocol_policy = "http-only"
+      origin_ssl_protocols   = ["TLSv1.2"]
+    }
+  }
+
+  # Default behavior -> S3 (the SPA, static).
   default_cache_behavior {
     target_origin_id       = "s3-${aws_s3_bucket.site.id}"
     viewer_protocol_policy = "redirect-to-https"
@@ -73,19 +88,19 @@ resource "aws_cloudfront_distribution" "site" {
     cache_policy_id = "658327ea-f89d-4fab-a63d-7e88639e58f6"
   }
 
-  # SPA fallback — Angular client-side routing
-  custom_error_response {
-    error_code            = 403
-    response_code         = 200
-    response_page_path    = "/${var.default_root_object}"
-    error_caching_min_ttl = 10
-  }
-
-  custom_error_response {
-    error_code            = 404
-    response_code         = 200
-    response_page_path    = "/${var.default_root_object}"
-    error_caching_min_ttl = 10
+  # API paths -> ALB origin. CachingDisabled + AllViewer so auth headers, query
+  # strings and request bodies pass through untouched.
+  dynamic "ordered_cache_behavior" {
+    for_each = var.api_path_patterns
+    content {
+      path_pattern             = ordered_cache_behavior.value
+      target_origin_id         = "alb-api"
+      viewer_protocol_policy   = "redirect-to-https"
+      allowed_methods          = ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"]
+      cached_methods           = ["GET", "HEAD"]
+      cache_policy_id          = "4135ea2d-6df8-44a3-9df3-4b5a84be39ad" # CachingDisabled
+      origin_request_policy_id = "216adef6-5c7f-47e4-b989-5492eb8c4dc7" # AllViewer
+    }
   }
 
   restrictions {

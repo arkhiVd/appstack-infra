@@ -54,6 +54,9 @@ module "ecs_compute" {
 module "s3_cloudfront_frontend" {
   source       = "../../modules/s3_cloudfront_frontend"
   project_name = var.project_name
+  alb_dns_name = module.ecs_compute.alb_dns_name
+
+  depends_on = [module.ecs_compute]
 }
 
 module "sqs_messaging" {
@@ -89,6 +92,7 @@ module "ecs_services" {
   opensearch_endpoint   = module.opensearch.endpoint
   price_sync_queue_name = "${var.project_name}-price-sync"
   pdf_ingest_queue_name = "${var.project_name}-pdf-ingest"
+  pdf_bucket_name       = module.sqs_messaging.pdf_bucket_name
   jwt_key               = var.jwt_key
 
   depends_on = [

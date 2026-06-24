@@ -20,3 +20,23 @@ variable "price_class" {
   type        = string
   default     = "PriceClass_100"
 }
+
+variable "alb_dns_name" {
+  description = "ALB DNS name to use as the API origin (so SPA + API share one origin, no CORS)"
+  type        = string
+}
+
+variable "api_path_patterns" {
+  description = "Request paths routed to the ALB origin instead of the S3 SPA"
+  type        = list(string)
+  default = [
+    "/auth/*",
+    "/catalog/*",
+    "/search*",
+    "/inventory/*",
+    "/orders/*",
+    "/notifications*",
+    "/suppliers*",
+    "/integration/*",
+  ]
+}

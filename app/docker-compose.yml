@@ -92,6 +92,7 @@ services:
       AWS__ServiceUrl: "http://localstack:4566"
       AWS__Region: "ap-south-1"
       Queues__PriceSync: "appstack-price-sync"
+      Storage__PdfBucket: "appstack-pdf-ingest"
     ports:
       - "8082:8080"
     depends_on:
