@@ -2,7 +2,7 @@
 
 Infrastructure-as-Code for a product search & management platform
 (.NET microservices, Angular admin panel, React Native app). Built on AWS with
-a **strict free-tier / lowest-cost focus**, fully modular Terraform.
+a **lowest-cost focus**, fully modular Terraform.
 
 Region: `ap-south-1` · IaC: Terraform (AWS provider `~> 5.0`) · Custom VPC (no
 default VPC used anywhere)
